@@ -528,7 +528,24 @@ function num(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
 function normName(s) { return (s || '').toString().trim().replace(/\s+/g, ' '); }
 function fmt(n) { return num(n).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
 function calcProfit(paid, due) { return Math.max(0, num(paid) - num(due)); }
-function computeRemaining(row) { return num(row.price) - num(row.paid); }
+
+// حملات الترويج ما تخزن حقل "price" مباشرة بفايربيس — السعر يتحسب من
+// الميزانية × سعر الحملة، بنفس معادلة لوحة التحكم بالضبط.
+function getRowPrice(section, row) {
+  if (section === 'promotion') {
+    let campaignRate = num(row.campaign_rate);
+    if ((row.campaign_rate || '') === 'كتابة يدوياً') campaignRate = num(row.campaign_rate_custom);
+    if (!campaignRate) {
+      const usd = num(row.budget_usd);
+      const oldPrice = num(row.price);
+      const implied = usd > 0 ? oldPrice / usd : 0;
+      campaignRate = implied || 1800;
+    }
+    return num(row.budget_usd) * campaignRate;
+  }
+  return num(row.price);
+}
+function computeRemaining(section, row) { return Math.max(0, getRowPrice(section, row) - num(row.paid)); }
 
 function computeRowProfit(section, row) {
   if (section === 'designs') return calcProfit(row.paid, row.designer_due);
@@ -545,9 +562,9 @@ function computeRowProfit(section, row) {
 function sectionStats(state, section) {
   const rows = state[section] || [];
   const count = rows.length;
-  const totalPrice = rows.reduce((a, r) => a + num(r.price), 0);
+  const totalPrice = rows.reduce((a, r) => a + getRowPrice(section, r), 0);
   const totalPaid = rows.reduce((a, r) => a + num(r.paid), 0);
-  const totalRemaining = rows.reduce((a, r) => a + computeRemaining(r), 0);
+  const totalRemaining = rows.reduce((a, r) => a + computeRemaining(section, r), 0);
   const totalProfit = rows.reduce((a, r) => a + computeRowProfit(section, r), 0);
   return { count, totalPrice, totalPaid, totalRemaining, totalProfit };
 }
@@ -559,7 +576,7 @@ function computeDebtsAuto(state) {
     (state[sec] || []).forEach(row => {
       const name = normName(row.client);
       if (!name) return;
-      const rem = computeRemaining(row);
+      const rem = computeRemaining(sec, row);
       if (!map[name]) map[name] = { client: row.client, design_debt: 0, promo_debt: 0, sub_debt: 0, service_debt: 0 };
       map[name][key] += rem;
     });
@@ -654,12 +671,13 @@ function buildClientReport(state, clientName, startDate, endDate) {
     if (rows.length === 0) return;
     found += rows.length;
     const lines = rows.map(r => {
-      const remaining = computeRemaining(r);
-      totalPrice += num(r.price);
+      const remaining = computeRemaining(sec.key, r);
+      const priceVal = getRowPrice(sec.key, r);
+      totalPrice += priceVal;
       totalPaid += num(r.paid);
       totalRemaining += remaining;
       const statusLabel = sec.key === 'subscriptions' ? subscriptionStatusLabel(r) : '';
-      return `📅 ${r[sec.dateField] || '-'} | 💰 ${fmt(r.price)} | 💵 ${fmt(r.paid)} | 🧾 ${fmt(remaining)}${statusLabel}`;
+      return `📅 ${r[sec.dateField] || '-'} | 💰 ${fmt(priceVal)} | 💵 ${fmt(r.paid)} | 🧾 ${fmt(remaining)}${statusLabel}`;
     });
     blocks.push(`${sec.label} (${rows.length})\n` + lines.join('\n'));
   });

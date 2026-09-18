@@ -25,6 +25,19 @@ function addDays(dateStr, days) {
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
 }
+// حملات الترويج ما تخزن حقل "price" مباشرة — يتحسب من الميزانية × سعر الحملة،
+// بنفس معادلة لوحة التحكم بالضبط.
+function getPromotionPrice(row) {
+  let campaignRate = num(row.campaign_rate);
+  if ((row.campaign_rate || '') === 'كتابة يدوياً') campaignRate = num(row.campaign_rate_custom);
+  if (!campaignRate) {
+    const usd = num(row.budget_usd);
+    const oldPrice = num(row.price);
+    const implied = usd > 0 ? oldPrice / usd : 0;
+    campaignRate = implied || 1800;
+  }
+  return num(row.budget_usd) * campaignRate;
+}
 // عدد الأيام من اليوم لغاية dateStr (موجب = بالمستقبل، صفر أو أقل = اليوم أو مضى)
 function daysUntil(dateStr) {
   const target = new Date(dateStr + 'T00:00:00');
@@ -84,7 +97,7 @@ exports.handler = async () => {
         `📅 تاريخ البدء: ${fmtDate(row.date)}\n` +
         `📅 تاريخ الانتهاء: ${fmtDate(endDate)}\n` +
         `💵 الميزانية: $ ${fmt(row.budget_usd)}\n` +
-        `💰 السعر: ${fmt(row.price)} د.ع`
+        `💰 السعر: ${fmt(getPromotionPrice(row))} د.ع`
       );
       if (ok) markSent(beforeKey);
     }
@@ -98,7 +111,7 @@ exports.handler = async () => {
         `📅 تاريخ الانتهاء: ${fmtDate(endDate)}\n` +
         `📆 المدة: ${row.campaign_days} يوم\n` +
         `💵 الميزانية: $ ${fmt(row.budget_usd)}\n` +
-        `💰 السعر: ${fmt(row.price)} د.ع\n\n` +
+        `💰 السعر: ${fmt(getPromotionPrice(row))} د.ع\n\n` +
         `✉️ رسالة جاهزة للإرسال للزبون:\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `انتهت مدة حملتكم الإعلانية بتاريخ ${fmtDate(endDate)}. نتمنى نكون حققنا نتائج جيدة، وبانتظار تواصلكم بخصوص تجديد الحملة 🌟`
